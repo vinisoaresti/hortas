@@ -151,7 +151,7 @@ def test_execucao_direta_inicia_uvicorn(monkeypatch):
     assert len(chamadas) == 1
     args, kwargs = chamadas[0]
     assert args[0].title == main.app.title
-    assert kwargs == {"host": "0.0.0.0", "port": 8080}
+    assert kwargs == {"host": "127.0.0.1", "port": 8080}
 
 
 def test_cadastrar_horta_com_ids_nao_ordenados(monkeypatch):
