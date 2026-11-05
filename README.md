@@ -3,21 +3,35 @@
 API REST em Python e FastAPI para consultar, cadastrar, atualizar e deletar hortas comunitárias. Os dados são
 armazenados em memória e reiniciados sempre que a aplicação é encerrada.
 
+[![Docker Image Size](https://img.shields.io/docker/image-size/vinisoaresti/vinisoaresti)](https://hub.docker.com/r/vinisoaresti/vinisoaresti)
+[![Docker Pulls](https://img.shields.io/docker/pulls/vinisoaresti/vinisoaresti)](https://hub.docker.com/r/vinisoaresti/vinisoaresti)
+[![Docker Image Version](https://img.shields.io/docker/v/vinisoaresti/vinisoaresti)](https://hub.docker.com/r/vinisoaresti/vinisoaresti)
+[![Docker Stars](https://img.shields.io/docker/stars/vinisoaresti/vinisoaresti)](https://hub.docker.com/r/vinisoaresti/vinisoaresti)
+
 ## Requisitos
 
-- Python 3.10 ou superior
+- Docker instalado
 
-## Instalação e execução
+## Criação da imagem e execução
 
-```powershell
-python -m venv .venv
-.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-python main.py
+Criação:
+
+```shell
+docker build -t hortas-api .
 ```
 
-A aplicação fica disponível em `http://localhost:8080` e a documentação
+Execução:
+
+```shell
+docker run -d -p 8080:8080 --name hortas-app hortas-api
+```
+
+A aplicação fica disponível em `http://localhost:8080/api/hortas` e a documentação
 interativa do FastAPI em `http://localhost:8080/docs`.
+
+## Imagens no DockerHub
+
+O repositório das imagens fica [aqui](https://hub.docker.com/r/vinisoaresti/vinisoaresti).
 
 ## Endpoints
 
