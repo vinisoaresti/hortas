@@ -10,7 +10,8 @@ armazenados em memória e reiniciados sempre que a aplicação é encerrada.
 
 ## Requisitos
 
-- Docker instalado
+- Docker instalado (opcional, para execução via container)
+- [VirtualBox](https://www.virtualbox.org/) e [Vagrant](https://www.vagrantup.com/) instalados (para execução da infraestrutura virtual)
 
 ## Criação da imagem e execução
 
@@ -32,6 +33,80 @@ interativa do FastAPI em `http://localhost:8080/docs`.
 ## Imagens no DockerHub
 
 O repositório das imagens fica [aqui](https://hub.docker.com/r/vinisoaresti/vinisoaresti).
+
+## Infraestrutura Virtual com Vagrant e VirtualBox (VM1 e VM2)
+
+O repositório inclui a definição de duas máquinas virtuais provisionadas com Vagrant utilizando o provedor **VirtualBox**:
+
+- **VM1 (Máquina de Testes / Cliente):**
+  - **Memória RAM:** 1024 MB
+  - **Endereço IPv4 Privado (Classe C):** `192.168.56.10`
+  - **Ferramentas:** `curl` e `wget` pré-instaladas para execução de testes de rede e consumo de APIs.
+- **VM2 (Servidor Backend):**
+  - **Memória RAM:** 1024 MB (quantidade necessária e dimensionada para execução estável do sistema operacional Ubuntu 22.04 LTS e do servidor FastAPI/Uvicorn).
+  - **Endereço IPv4 Privado (Classe C):** `192.168.56.11`
+  - **Pasta Sincronizada:** A pasta raiz da aplicação é sincronizada com o diretório `/vagrant_data` dentro da VM2.
+  - **Dependências:** `python3`, `python3-pip` e dependências do arquivo `requirements.txt` instaladas em ambiente virtual dedicado.
+  - **Execução:** A aplicação FastAPI é iniciada automaticamente em segundo plano como um serviço de sistema (`systemd`), ouvindo em `0.0.0.0:8080`.
+
+### Passo a passo para executar a infraestrutura
+
+1. **Subir as máquinas virtuais:**
+   No diretório raiz do projeto (onde está localizado o `Vagrantfile`), execute:
+
+   ```bash
+   vagrant up
+   ```
+
+   > Esse comando inicializará a VM1 e a VM2 no VirtualBox, montará o diretório sincronizado `/vagrant_data` na VM2, instalará todas as dependências do projeto e iniciará o backend automaticamente.
+
+2. **Verificar o estado das VMs:**
+   ```bash
+   vagrant status
+   ```
+   Ambas as máquinas (`vm1` e `vm2`) devem constar com o status `running (virtualbox)`.
+
+### Testando a rota GET dentro da VM1
+
+Com as máquinas em execução e o backend ativo na VM2 (`192.168.56.11:8080`), realize os testes a partir da VM1 (`192.168.56.10`):
+
+1. **Acessar a VM1 via SSH:**
+
+   ```bash
+   vagrant ssh vm1
+   ```
+
+2. **Testar a rota GET `/api/hortas` da aplicação na VM2:**
+   - **Utilizando o `curl`:**
+
+     ```bash
+     curl http://192.168.56.11:8080/api/hortas
+     ```
+
+     _(Opcional: para visualizar com cabeçalhos de resposta HTTP, use `curl -i http://192.168.56.11:8080/api/hortas`)_
+
+   - **Utilizando o `wget`:**
+
+     ```bash
+     wget -qO- http://192.168.56.11:8080/api/hortas
+     ```
+
+     _(O parâmetro `-qO-` faz o `wget` exibir o corpo da resposta diretamente no terminal de forma silenciosa)_
+
+   - **Testando rota GET de uma horta específica (ex: ID 1):**
+     - Com `curl`:
+       ```bash
+       curl http://192.168.56.11:8080/api/hortas/1
+       ```
+     - Com `wget`:
+       ```bash
+       wget -qO- http://192.168.56.11:8080/api/hortas/1
+       ```
+
+3. **Encerrar a sessão SSH na VM1:**
+   ```bash
+   exit
+   ```
 
 ## Endpoints
 
