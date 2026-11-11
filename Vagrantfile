@@ -15,11 +15,45 @@ Vagrant.configure("2") do |config|
       vb.gui = false
     end
 
+    vm1.vm.synced_folder "./ansible", "/home/vagrant/ansible",
+      owner: "vagrant",
+      group: "vagrant",
+      mount_options: ["dmode=755", "fmode=644"]
+
     vm1.vm.provision "shell", inline: <<-SHELL
-      echo "=== Provisionando VM1 ==="
+      echo "=== Provisionando VM1 (No de Controle Ansible) ==="
       export DEBIAN_FRONTEND=noninteractive
       apt-get update -y
-      apt-get install -y curl wget
+      apt-get install -y ansible curl wget
+
+      mkdir -p /etc/ansible
+      ln -sf /home/vagrant/ansible/ansible.cfg /etc/ansible/ansible.cfg
+      ln -sf /home/vagrant/ansible/hosts /etc/ansible/hosts
+
+      mkdir -p /home/vagrant/.ssh
+      chmod 700 /home/vagrant/.ssh
+      if [ ! -f /home/vagrant/.ssh/id_ed25519 ]; then
+        ssh-keygen -t ed25519 -N "" -f /home/vagrant/.ssh/id_ed25519
+      fi
+      chown -R vagrant:vagrant /home/vagrant/.ssh
+      chmod 600 /home/vagrant/.ssh/id_ed25519
+      chmod 644 /home/vagrant/.ssh/id_ed25519.pub
+
+      mkdir -p /vagrant/.vagrant
+      cp /home/vagrant/.ssh/id_ed25519.pub /vagrant/.vagrant/ansible_id_ed25519.pub
+
+      if [ -f /vagrant/.vagrant/machines/vm2/virtualbox/private_key ]; then
+        cp /vagrant/.vagrant/machines/vm2/virtualbox/private_key /tmp/vm2_key
+        chown vagrant:vagrant /tmp/vm2_key
+        chmod 600 /tmp/vm2_key
+        PUB_KEY=$(cat /home/vagrant/.ssh/id_ed25519.pub)
+        sudo -u vagrant ssh -i /tmp/vm2_key -o StrictHostKeyChecking=no -o ConnectTimeout=3 \
+          vagrant@192.168.56.11 \
+          "mkdir -p ~/.ssh && chmod 700 ~/.ssh && touch ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && (grep -qxF '$PUB_KEY' ~/.ssh/authorized_keys || echo '$PUB_KEY' >> ~/.ssh/authorized_keys)" \
+          2>/dev/null || true
+        rm -f /tmp/vm2_key
+      fi
+
       echo "=== VM1 configurada com sucesso ==="
     SHELL
   end
@@ -34,38 +68,19 @@ Vagrant.configure("2") do |config|
       vb.gui = false
     end
 
-    vm2.vm.synced_folder ".", "/vagrant_data"
-
     vm2.vm.provision "shell", inline: <<-SHELL
-      echo "=== Provisionando VM2 ==="
-      export DEBIAN_FRONTEND=noninteractive
-      apt-get update -y
-      apt-get install -y python3 python3-pip python3-venv
-      sudo -u vagrant python3 -m venv /home/vagrant/venv
-      sudo -u vagrant /home/vagrant/venv/bin/pip install --upgrade pip
-      sudo -u vagrant /home/vagrant/venv/bin/pip install -r /vagrant_data/requirements.txt
+      echo "=== Provisionando VM2 (No Gerenciado pelo Ansible) ==="
+      mkdir -p /home/vagrant/.ssh
+      chmod 700 /home/vagrant/.ssh
+      touch /home/vagrant/.ssh/authorized_keys
+      chmod 600 /home/vagrant/.ssh/authorized_keys
+      chown -R vagrant:vagrant /home/vagrant/.ssh
 
-      cat <<EOF > /etc/systemd/system/hortas.service
-[Unit]
-Description=API de Gestao de Hortas Comunitarias
-After=network.target
-
-[Service]
-User=vagrant
-WorkingDirectory=/vagrant_data
-Environment=PYTHONDONTWRITEBYTECODE=1
-Environment=PYTHONUNBUFFERED=1
-ExecStart=/home/vagrant/venv/bin/uvicorn main:app --host 0.0.0.0 --port 8080
-Restart=always
-RestartSec=3
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-      systemctl daemon-reload
-      systemctl enable --now hortas.service
-      echo "=== Servico hortas iniciado e habilitado na VM2 ==="
+      if [ -f /vagrant/.vagrant/ansible_id_ed25519.pub ]; then
+        PUB_KEY=$(cat /vagrant/.vagrant/ansible_id_ed25519.pub)
+        grep -qxF "$PUB_KEY" /home/vagrant/.ssh/authorized_keys || echo "$PUB_KEY" >> /home/vagrant/.ssh/authorized_keys
+      fi
+      echo "=== VM2 pronta para configuracao via Ansible ==="
     SHELL
   end
 end

@@ -34,22 +34,29 @@ interativa do FastAPI em `http://localhost:8080/docs`.
 
 O repositório das imagens fica [aqui](https://hub.docker.com/r/vinisoaresti/vinisoaresti).
 
-## Infraestrutura Virtual com Vagrant e VirtualBox (VM1 e VM2)
+## Infraestrutura Virtual com Vagrant, VirtualBox e Ansible (VM1 e VM2)
 
-O repositório inclui a definição de duas máquinas virtuais provisionadas com Vagrant utilizando o provedor **VirtualBox**:
+O repositório define duas máquinas virtuais provisionadas com Vagrant utilizando o provedor **VirtualBox** e configuradas com **Ansible**:
 
-- **VM1 (Máquina de Testes / Cliente):**
+- **VM1 (Nó de Controle Ansible / Máquina de Testes):**
   - **Memória RAM:** 1024 MB
   - **Endereço IPv4 Privado (Classe C):** `192.168.56.10`
-  - **Ferramentas:** `curl` e `wget` pré-instaladas para execução de testes de rede e consumo de APIs.
-- **VM2 (Servidor Backend):**
-  - **Memória RAM:** 1024 MB (quantidade necessária e dimensionada para execução estável do sistema operacional Ubuntu 22.04 LTS e do servidor FastAPI/Uvicorn).
+  - **Softwares instalados:** `ansible`, `curl` e `wget`
+  - **Configuração montada:** A pasta `./ansible` do repositório é montada em `/home/vagrant/ansible` dentro da VM1 (com links simbólicos em `/etc/ansible/ansible.cfg` e `/etc/ansible/hosts` apontando para os arquivos montados), além da geração automática da chave SSH (`ed25519`) utilizada pelo Ansible para acessar a VM2.
+- **VM2 (Nó Gerenciado / Servidor Backend):**
+  - **Memória RAM:** 1024 MB (dimensionada para execução estável do Ubuntu 22.04 LTS e do servidor FastAPI/Uvicorn).
   - **Endereço IPv4 Privado (Classe C):** `192.168.56.11`
-  - **Pasta Sincronizada:** A pasta raiz da aplicação é sincronizada com o diretório `/vagrant_data` dentro da VM2.
-  - **Dependências:** `python3`, `python3-pip` e dependências do arquivo `requirements.txt` instaladas em ambiente virtual dedicado.
-  - **Execução:** A aplicação FastAPI é iniciada automaticamente em segundo plano como um serviço de sistema (`systemd`), ouvindo em `0.0.0.0:8080`.
+  - **Provisionamento via Ansible:** Recebe a aplicação por meio do playbook `ansible/configuranode.yaml`, que clona o repositório em `/home/vagrant/hortas`, cria o ambiente virtual Python em `/home/vagrant/venv`, instala as dependências de `requirements.txt` e registra o serviço `hortas` no `systemd`.
 
-### Passo a passo para executar a infraestrutura
+### Arquivos do Ansible
+
+Os arquivos de configuração e automação ficam armazenados no diretório `ansible/`:
+
+- [`ansible/ansible.cfg`](ansible/ansible.cfg): arquivo de configuração do Ansible (inventário padrão `/home/vagrant/ansible/hosts`, usuário remoto `vagrant`, chave privada `/home/vagrant/.ssh/id_ed25519` e `host_key_checking = False`).
+- [`ansible/hosts`](ansible/hosts): inventário contendo o grupo `[app]` com o host `vm2` (`192.168.56.11`).
+- [`ansible/configuranode.yaml`](ansible/configuranode.yaml): playbook responsável por instalar `git`, `python3`, `python3-pip` e `python3-venv` na VM2, clonar o repositório da aplicação, instalar as dependências de execução e habilitar/iniciar o serviço `hortas`.
+
+### Configuração e execução da infraestrutura e da aplicação
 
 1. **Subir as máquinas virtuais:**
    No diretório raiz do projeto (onde está localizado o `Vagrantfile`), execute:
@@ -58,7 +65,7 @@ O repositório inclui a definição de duas máquinas virtuais provisionadas com
    vagrant up
    ```
 
-   > Esse comando inicializará a VM1 e a VM2 no VirtualBox, montará o diretório sincronizado `/vagrant_data` na VM2, instalará todas as dependências do projeto e iniciará o backend automaticamente.
+   > Esse comando cria e inicia `vm1` e `vm2` no VirtualBox, instala o Ansible, `curl` e `wget` na `vm1`, monta `./ansible` em `/home/vagrant/ansible` e configura a chave SSH entre `vm1` e `vm2`.
 
 2. **Verificar o estado das VMs:**
    ```bash
@@ -66,34 +73,58 @@ O repositório inclui a definição de duas máquinas virtuais provisionadas com
    ```
    Ambas as máquinas (`vm1` e `vm2`) devem constar com o status `running (virtualbox)`.
 
-### Testando a rota GET dentro da VM1
+3. **Acessar o nó de controle (`vm1`) e testar a conectividade com o Ansible:**
+   ```bash
+   vagrant ssh vm1
+   ansible all -m ping
+   ```
+   A resposta esperada para `vm2` deve indicar `SUCCESS` com `"ping": "pong"`.
 
-Com as máquinas em execução e o backend ativo na VM2 (`192.168.56.11:8080`), realize os testes a partir da VM1 (`192.168.56.10`):
+4. **Executar o playbook para instalar e iniciar a aplicação na `vm2`:**
+   Ainda dentro da `vm1`, execute:
 
-1. **Acessar a VM1 via SSH:**
+   ```bash
+   ansible-playbook /home/vagrant/ansible/configuranode.yaml
+   ```
 
+   O playbook realiza o clone do repositório na `vm2` (`/home/vagrant/hortas`), cria o ambiente virtual em `/home/vagrant/venv`, instala todas as dependências do `requirements.txt`, configura o serviço `/etc/systemd/system/hortas.service` e inicia a API automaticamente ouvindo em `0.0.0.0:8080`.
+
+5. **Gerenciar ou executar a aplicação manualmente na `vm2` (opcional):**
+   Caso queira verificar o status do serviço ou executar o servidor manualmente na `vm2`:
+   - Pelo `systemd` (dentro da `vm2`, via `vagrant ssh vm2`):
+     ```bash
+     sudo systemctl status hortas
+     sudo systemctl restart hortas
+     ```
+   - Execução manual com Uvicorn (caso o serviço esteja parado via `sudo systemctl stop hortas`):
+     ```bash
+     cd /home/vagrant/hortas
+     /home/vagrant/venv/bin/uvicorn main:app --host 0.0.0.0 --port 8080
+     ```
+
+### Testando a aplicação dentro da VM1 com `curl` ou `wget`
+
+Com a infraestrutura provisionada e a API em execução na `vm2` (`192.168.56.11:8080`), execute os testes diretamente a partir da `vm1` (`192.168.56.10`):
+
+1. **Acessar a VM1 via SSH (caso ainda não esteja conectado):**
    ```bash
    vagrant ssh vm1
    ```
 
 2. **Testar a rota GET `/api/hortas` da aplicação na VM2:**
-   - **Utilizando o `curl`:**
-
+   - **Utilizando `curl`:**
      ```bash
      curl http://192.168.56.11:8080/api/hortas
      ```
+     _(Opcional: para visualizar o código de status e os cabeçalhos HTTP, use `curl -i http://192.168.56.11:8080/api/hortas`)_
 
-     _(Opcional: para visualizar com cabeçalhos de resposta HTTP, use `curl -i http://192.168.56.11:8080/api/hortas`)_
-
-   - **Utilizando o `wget`:**
-
+   - **Utilizando `wget`:**
      ```bash
      wget -qO- http://192.168.56.11:8080/api/hortas
      ```
+     _(O parâmetro `-qO-` faz o `wget` exibir o corpo da resposta diretamente no terminal sem gerar arquivo local)_
 
-     _(O parâmetro `-qO-` faz o `wget` exibir o corpo da resposta diretamente no terminal de forma silenciosa)_
-
-   - **Testando rota GET de uma horta específica (ex: ID 1):**
+   - **Testando a consulta de uma horta específica (ex.: ID `1`):**
      - Com `curl`:
        ```bash
        curl http://192.168.56.11:8080/api/hortas/1
