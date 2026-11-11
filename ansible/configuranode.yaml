@@ -1,0 +1,93 @@
+---
+- name: Configurar servidor da aplicação Hortas Comunitárias na VM2
+  hosts: app
+
+  vars:
+    repo_url: https://github.com/vinisoaresti/hortas.git
+    repo_branch: main
+    app_user: vagrant
+    app_dir: /home/vagrant/hortas
+    venv_dir: /home/vagrant/venv
+    app_port: 8080
+
+  tasks:
+    - name: Atualizar cache do apt e instalar dependências do sistema
+      become: true
+      ansible.builtin.apt:
+        name:
+          - git
+          - python3
+          - python3-pip
+          - python3-venv
+        state: present
+        update_cache: true
+
+    - name: Clonar repositório da aplicação na VM2
+      ansible.builtin.git:
+        repo: "{{ repo_url }}"
+        dest: "{{ app_dir }}"
+        version: "{{ repo_branch }}"
+        force: true
+      notify: Reiniciar servico hortas
+
+    - name: Atualizar pip no ambiente virtual Python
+      ansible.builtin.pip:
+        name: pip>=24.0
+        state: present
+        virtualenv: "{{ venv_dir }}"
+        virtualenv_command: python3 -m venv
+
+    - name: Instalar dependências de execução da aplicação
+      ansible.builtin.pip:
+        requirements: "{{ app_dir }}/requirements.txt"
+        virtualenv: "{{ venv_dir }}"
+        virtualenv_command: python3 -m venv
+      notify: Reiniciar servico hortas
+
+    - name: Configurar serviço systemd da aplicação Hortas
+      become: true
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/hortas.service
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=API de Gestao de Hortas Comunitarias
+          After=network.target
+
+          [Service]
+          User={{ app_user }}
+          WorkingDirectory={{ app_dir }}
+          Environment=PYTHONDONTWRITEBYTECODE=1
+          Environment=PYTHONUNBUFFERED=1
+          ExecStart={{ venv_dir }}/bin/uvicorn main:app --host 0.0.0.0 --port {{ app_port }}
+          Restart=always
+          RestartSec=3
+
+          [Install]
+          WantedBy=multi-user.target
+      notify: Reiniciar servico hortas
+
+    - name: Habilitar e iniciar o serviço da aplicação Hortas
+      become: true
+      ansible.builtin.systemd:
+        name: hortas
+        enabled: true
+        state: started
+        daemon_reload: true
+
+    - name: Aplicar reinicializações pendentes do serviço antes da verificação
+      ansible.builtin.meta: flush_handlers
+
+    - name: Aguardar a aplicação responder na porta {{ app_port }}
+      ansible.builtin.wait_for:
+        host: 127.0.0.1
+        port: "{{ app_port }}"
+        timeout: 30
+
+  handlers:
+    - name: Reiniciar servico hortas
+      become: true
+      ansible.builtin.systemd:
+        name: hortas
+        state: restarted
+        daemon_reload: true
